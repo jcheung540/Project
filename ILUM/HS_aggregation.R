@@ -1,10 +1,7 @@
 library(dplyr)
 library(magrittr)
 library(openxlsx)
-factortonumeric <- function(var){
-  var <- as.numeric(as.character(var))
-  return(var)
-}
+
 ## Read Admission Data ---------------------------------------------------------------------------------
 dat <- read.csv("Data/aha_data_main_indicators_2011_2017.csv", header=TRUE) %>% filter(Year %in% c(2016,2017))
 sysupdate <- read.xlsx("Data/AHA_HealthSystem_Amend.xlsx")
@@ -93,7 +90,7 @@ top100_hos <- top100mapping %>% filter(!is.na(AHA.ID)) %>%
 
 top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank)
 
-top100$percentile <- cut(top100$Yes, breaks=c(0,mean(top100$Yes,na.rm = TRUE),1), 
+top100$electrical_lab_percentile <- cut(top100$Yes, breaks=c(0,mean(top100$Yes,na.rm = TRUE),1), 
                                     labels=c("Below Average","Above Average"))
 
 hma %<>% left_join(top100mapping[,c(1,4)], by = "HMA_System_Name")
@@ -144,7 +141,7 @@ top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank)
 readm_cutoff <- quantile(top100$avg_readm_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
 
 
-top100$percentile <- cut(top100$avg_readm_score, breaks=c(0,readm_cutoff,100), 
+top100$readm_percentile <- cut(top100$avg_readm_score, breaks=c(0,readm_cutoff,100), 
                                        labels=c("Below 10%","10 percentile","25 percentile",
                                                 "50 percentile","75 percentile","90 percentile"))
 
@@ -196,7 +193,7 @@ top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank)
 infection_cutoff <- quantile(top100$avg_infection_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
 
 
-top100$percentile <- cut(top100$avg_infection_score, breaks=c(0,infection_cutoff,100), 
+top100$infection_percentile <- cut(top100$avg_infection_score, breaks=c(0,infection_cutoff,100), 
                          labels=c("Below 10%","10 percentile","25 percentile",
                                   "50 percentile","75 percentile","90 percentile"))
 
@@ -260,8 +257,6 @@ top100$HAI_6_percentile <- cut(top100$avg_HAI6_score, breaks=c(0,cutoff6,10),
 hma %<>% left_join(top100mapping[,c(1,4)], by = "HMA_System_Name")
 
 stat <- data.frame(percentile = row.names(as.data.frame(cutoff5)),
-                   readm_score_cutoff = readm_cutoff,
-                   infection_score_cutoff = infection_cutoff,
                    HAI5_cutoff = cutoff5,
                    HAI6_cutoff = cutoff6)
 
@@ -270,3 +265,34 @@ list_of_datasets <- list("Keycutoff" = stat, "Top100" = top100, "HMA" = hma)
 write.xlsx(list_of_datasets, file = "Result/HAI_result.xlsx")
 
 rm(hma,haidat,hai,list_of_datasets,stat,top100,top100_hos,top100_sys)
+
+## Part 5: Combine ----------------------------------------------------------------------------
+keycutoff <- data.frame(percentile = row.names(as.data.frame(cutoff5)),
+                   readm_score_cutoff = readm_cutoff,
+                   infection_score_cutoff = infection_cutoff,
+                   HAI_5_cutoff = cutoff5,
+                   HAI_6_cutoff = cutoff6)
+
+top100readm <- read.xlsx("Result/readmission_result.xlsx", sheet = 2)
+top100infec <- read.xlsx("Result/infection_result.xlsx", sheet = 2)
+top100hai <- read.xlsx("Result/HAI_result.xlsx", sheet = 2)
+top100elelab <- read.xlsx("Result/electrical_lab_result.xlsx", sheet = 2)
+
+top100full <- top100elelab %>% 
+  left_join(top100readm, by = c("oprevrank","a_Name")) %>%
+  left_join(top100infec, by = c("oprevrank","a_Name")) %>%
+  left_join(top100hai, by = c("oprevrank","a_Name"))
+
+hma_readm <- read.xlsx("Result/readmission_result.xlsx", sheet = 3)
+hma_infec <- read.xlsx("Result/infection_result.xlsx", sheet = 3)
+hma_hai <- read.xlsx("Result/HAI_result.xlsx", sheet = 3)
+hma_elelab <- read.xlsx("Result/electrical_lab_result.xlsx", sheet = 3)
+
+hma_full <- hma_elelab %>%
+  left_join(hma_readm, by = c("HMA_System_Name","oprevrank")) %>%
+  left_join(hma_infec, by = c("HMA_System_Name","oprevrank")) %>%
+  left_join(hma_hai, by = c("HMA_System_Name","oprevrank")) %>%
+  select(5,1:4,6:9)
+
+list_of_datasets <- list("Keycutoff" = keycutoff, "Top100" = top100full, "HMA" = hma_full)
+write.xlsx(list_of_datasets, file = "Result/combined_result.xlsx")
