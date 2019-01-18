@@ -296,3 +296,23 @@ hma_full <- hma_elelab %>%
 
 list_of_datasets <- list("Keycutoff" = keycutoff, "Top100" = top100full, "HMA" = hma_full)
 write.xlsx(list_of_datasets, file = "Result/combined_result.xlsx")
+
+
+hist(top100elelab$Yes, # histogram
+     col = "peachpuff", # column color
+     border = "black", 
+     prob = FALSE, # show frequencies instead of densities
+     xlim = c(0,1),
+     ylim = c(0,50),
+     xlab = "% of Hospitals use Electrical Lab Result ")
+abline(v = mean(top100elelab$Yes, na.rm = TRUE),
+       col = "royalblue",
+       lwd = 2)
+abline(v = median(top100elelab$Yes, na.rm = TRUE),
+       col = "red",
+       lwd = 2)
+
+legend(x = "topleft", # location of legend within plot area
+       c("Mean", "Median"),
+       col = c("royalblue", "red"),
+       lwd = c(2, 2))
