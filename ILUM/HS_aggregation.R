@@ -141,23 +141,23 @@ top100_hos <- top100mapping %>% filter(!is.na(AHA.ID)) %>%
 
 top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank)
 
-cutoff <- quantile(top100$avg_readm_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
+readm_cutoff <- quantile(top100$avg_readm_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
 
 
-top100$percentile <- cut(top100$avg_readm_score, breaks=c(0,cutoff,100), 
+top100$percentile <- cut(top100$avg_readm_score, breaks=c(0,readm_cutoff,100), 
                                        labels=c("Below 10%","10 percentile","25 percentile",
                                                 "50 percentile","75 percentile","90 percentile"))
 
 hma %<>% left_join(top100mapping[,c(1,4)], by = "HMA_System_Name")
 
-stat <- data.frame( percentile = row.names(as.data.frame(cutoff)),
-                    value = cutoff)
+stat <- data.frame( percentile = row.names(as.data.frame(readm_cutoff)),
+                    readm_score_cutoff = readm_cutoff)
 
 
 list_of_datasets <- list("Keycutoff" = stat, "Top100" = top100, "HMA" = hma)
 write.xlsx(list_of_datasets, file = "Result/readmission_result.xlsx")
 
-rm(hma,readmisson, readm,list_of_datasets,stat,top100,top100_hos,top100_sys,cutoff)
+rm(hma,readmisson, readm,list_of_datasets,stat,top100,top100_hos,top100_sys)
 
 ## Part 3: Infection -----------------------------------------------------------------------
 infection <- read.csv("Data/Complications and Deaths - Hospital.csv", header = TRUE) %>%
@@ -193,20 +193,80 @@ top100_hos <- top100mapping %>% filter(!is.na(AHA.ID)) %>%
 
 top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank)
 
-cutoff <- quantile(top100$avg_infection_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
+infection_cutoff <- quantile(top100$avg_infection_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
 
 
-top100$percentile <- cut(top100$avg_infection_score, breaks=c(0,cutoff,100), 
+top100$percentile <- cut(top100$avg_infection_score, breaks=c(0,infection_cutoff,100), 
                          labels=c("Below 10%","10 percentile","25 percentile",
                                   "50 percentile","75 percentile","90 percentile"))
 
 hma %<>% left_join(top100mapping[,c(1,4)], by = "HMA_System_Name")
 
-stat <- data.frame( percentile = row.names(as.data.frame(cutoff)),
-                    value = cutoff)
+stat <- data.frame( percentile = row.names(as.data.frame(infection_cutoff)),
+                    infection_score_cutoff = infection_cutoff)
 
 
 list_of_datasets <- list("Keycutoff" = stat, "Top100" = top100, "HMA" = hma)
 write.xlsx(list_of_datasets, file = "Result/infection_result.xlsx")
 
-rm(hma,infection,infec,list_of_datasets,stat,top100,top100_hos,top100_sys,cutoff)
+rm(hma,infection,infec,list_of_datasets,stat,top100,top100_hos,top100_sys)
+
+## Part 4: HAI -----------------------------------------------------------------------
+haidat <- read.csv("Data/Healthcare Associated Infections - Hospital.csv", header = TRUE) %>%
+  filter(Measure.ID %in% c("HAI-5-SIR","HAI-6-SIR")) 
+
+haidat$Score <- as.numeric(as.character(haidat$Score))
+
+hai <- inner_join(dat2017, (haidat[,c(1,10,12)] %>% filter(!is.na(Provider.ID) & !is.na(Score))),
+                    by=c("Medicare_Provider_ID" = "Provider.ID")) %>%
+  tidyr::spread(key = Measure.ID, value = Score)
+hai$AHA_ID <- as.numeric(hai$AHA_ID)
+
+# HMA Members
+hma <- hai %>% filter(HMA_Member == "Y") %>%
+  group_by(HMA_System_Name) %>%
+  summarize(
+    avg_HAI5_score = sum(Admissions*`HAI-5-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE),
+    avg_HAI6_score = sum(Admissions*`HAI-6-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE))
+
+# top 100 
+# Split by AHA_System_ID and AHA.ID
+top100_sys <- top100mapping[,c(1:6)] %>% filter(!is.na(AHA_SyStem_ID)) %>% 
+  left_join(hai, by = c("AHA_SyStem_ID" = "System_ID")) %>%
+  group_by(oprevrank,a_Name) %>%
+  summarize(
+    avg_HAI5_score = sum(Admissions*`HAI-5-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE),
+    avg_HAI6_score = sum(Admissions*`HAI-6-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE))
+
+top100_hos <- top100mapping %>% filter(!is.na(AHA.ID)) %>% 
+  left_join(hai, by = c("AHA.ID" = "AHA_ID")) %>%
+  group_by(oprevrank,a_Name) %>%
+  summarize(
+    avg_HAI5_score = sum(Admissions*`HAI-5-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE),
+    avg_HAI6_score = sum(Admissions*`HAI-6-SIR`, na.rm = TRUE)/sum(Admissions,na.rm = TRUE))
+
+top100 <- bind_rows(top100_sys,top100_hos) %>% arrange(oprevrank) %>% filter(!is.na(avg_HAI6_score))
+
+cutoff6 <- quantile(top100$avg_HAI6_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
+cutoff5 <- quantile(top100$avg_HAI5_score,na.rm = TRUE, probs = c(0.1,0.25,0.5,0.75,0.9))
+
+top100$HAI_5_percentile <- cut(top100$avg_HAI5_score, breaks=c(0,cutoff5,10), 
+                         labels=c("Below 10%","10 percentile","25 percentile",
+                                  "50 percentile","75 percentile","90 percentile"))
+top100$HAI_6_percentile <- cut(top100$avg_HAI6_score, breaks=c(0,cutoff6,10), 
+                               labels=c("Below 10%","10 percentile","25 percentile",
+                                        "50 percentile","75 percentile","90 percentile"))
+
+hma %<>% left_join(top100mapping[,c(1,4)], by = "HMA_System_Name")
+
+stat <- data.frame(percentile = row.names(as.data.frame(cutoff5)),
+                   readm_score_cutoff = readm_cutoff,
+                   infection_score_cutoff = infection_cutoff,
+                   HAI5_cutoff = cutoff5,
+                   HAI6_cutoff = cutoff6)
+
+
+list_of_datasets <- list("Keycutoff" = stat, "Top100" = top100, "HMA" = hma)
+write.xlsx(list_of_datasets, file = "Result/HAI_result.xlsx")
+
+rm(hma,haidat,hai,list_of_datasets,stat,top100,top100_hos,top100_sys)
